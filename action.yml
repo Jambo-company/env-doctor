@@ -1,0 +1,31 @@
+name: 'Runenv - Secret Scanner'
+description: 'A lightning-fast, zero-dependency engine that proactively fails your CI/CD build if hardcoded secrets are detected.'
+branding:
+  icon: 'shield'
+  color: 'red'
+
+inputs:
+  dir:
+    description: 'Directory to scan (default: .)'
+    required: false
+    default: '.'
+  no-entropy:
+    description: 'Disable Shannon entropy scanning for faster execution but lower accuracy (default: false)'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run env-doctor
+      shell: bash
+      env:
+        CI: true
+      run: |
+        ARGS=""
+        if [ "${{ inputs.no-entropy }}" = "true" ]; then
+          ARGS="--no-entropy"
+        fi
+        
+        # We execute the bundled application statically from the action path
+        node ${{ github.action_path }}/dist/index.js -d "${{ inputs.dir }}" $ARGS
