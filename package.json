@@ -1,6 +1,6 @@
 {
   "name": "@jambo.team/env-doctor",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Zero-dependency secrets hygiene scanner and remediation tool",
   "main": "dist/index.js",
   "bin": {
