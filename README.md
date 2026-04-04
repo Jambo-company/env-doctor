@@ -56,7 +56,7 @@ jobs:
         with:
           node-version: 20
       - name: RunEnv Secret Scanner
-        uses: Jambo-company/runenv/runenv-github-action/scan@main
+        uses: Jambo-company/env-doctor@main
 ```
 
 When run in CI, if a secret is hardcoded, `env-doctor` will fatally crash the build and annotate exactly where the leak occurred inside the GitHub PR UI.
