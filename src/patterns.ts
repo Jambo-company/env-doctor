@@ -17,9 +17,9 @@ export const SECRET_PATTERNS: SecretPattern[] = [
   },
   {
     name: 'AWS Secret Access Key',
-    regex: /(?<![A-Za-z0-9/+=])(?:[A-Za-z0-9/+=]{40})(?![A-Za-z0-9/+=])/g,
+    regex: /(?:aws.?secret.?(?:access.?)?key|AWS_SECRET_ACCESS_KEY|secret.?access.?key)\s*[:=]\s*["']?([A-Za-z0-9/+=]{40})(?![A-Za-z0-9/+=])["']?/gi,
     severity: 'critical',
-    description: 'AWS secret key (40 chars, base64-like)',
+    description: 'AWS IAM secret access key assignment',
   },
   {
     name: 'AWS Session Token',

@@ -4,9 +4,15 @@ import chalk from 'chalk';
 import * as fs from 'fs';
 import * as path from 'path';
 import prompts from 'prompts';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { SECRET_PATTERNS, IGNORE_DIRS, IGNORE_EXTS, IGNORE_FILES, SEVERITY_ORDER, type Severity } from './patterns';
 import { findHighEntropyTokens } from './entropy';
+import { applySafeSecretExtraction, formatDotenvLine, isValidEnvVarName } from './remediation';
+
+function runRunenv(args: string[]): void {
+  const npxBin = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  execFileSync(npxBin, ['runenv', ...args], { stdio: 'inherit' });
+}
 
 const program = new Command();
 
@@ -251,7 +257,7 @@ program
         console.log(chalk.green('\n🚀 Bridging to RunEnv Migration Engine...'));
         let migrationReady = false;
         try {
-          execSync('npx runenv init', { stdio: 'inherit' });
+          runRunenv(['init']);
           migrationReady = true;
         } catch (err) {
           console.log(chalk.yellow('\n⚠️ RunEnv is not fully configured for this workspace yet.'));
@@ -259,7 +265,7 @@ program
           
           try {
             console.log(chalk.bold('Authenticating with RunEnv Cloud...'));
-            execSync('npx runenv login', { stdio: 'inherit' });
+            runRunenv(['login']);
             
             const defaultProjectName = path.basename(process.cwd());
             const projectResponse = await prompts({
@@ -269,9 +275,10 @@ program
               initial: defaultProjectName
             });
 
-            if (projectResponse.projectName) {
-              console.log(chalk.cyan(`\nProvisioning secure boundary for: ${projectResponse.projectName}...`));
-              execSync(`npx runenv init --project "${projectResponse.projectName}"`, { stdio: 'inherit' });
+            const projectName = typeof projectResponse.projectName === 'string' ? projectResponse.projectName.trim() : '';
+            if (projectName && !/[\r\n\0]/.test(projectName)) {
+              console.log(chalk.cyan(`\nProvisioning secure boundary for: ${projectName}...`));
+              runRunenv(['init', '--project', projectName]);
               migrationReady = true;
             } else {
               console.log(chalk.dim('\nSetup aborted.'));
@@ -311,30 +318,31 @@ program
                   initial: 'SECRET_VAR_' + Math.floor(Math.random() * 1000)
                 });
 
-                if (varRes.varName) {
+                const varName = typeof varRes.varName === 'string' ? varRes.varName.trim() : '';
+                if (varName && isValidEnvVarName(varName)) {
                   try {
-                    // 1. Refactor Source Code
-                    const absPath = path.resolve(process.cwd(), issue.file);
-                    if (fs.existsSync(absPath)) {
-                      let sourceCode = fs.readFileSync(absPath, 'utf-8');
-                      
-                      // Safely replace the string and surrounding quotes with process.env.X
-                      const escapedMatch = issue.matchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                      sourceCode = sourceCode.replace(
-                        new RegExp(`(['"\`]?)${escapedMatch}\\1`, 'g'),
-                        `process.env.${varRes.varName}`
-                      );
-                      fs.writeFileSync(absPath, sourceCode, 'utf-8');
+                    // 1. Refactor Source Code safely on the matched line within workspace root
+                    const absPath = path.resolve(rootDir, issue.file);
+                    if (absPath.startsWith(rootDir + path.sep) && fs.existsSync(absPath)) {
+                      const sourceCode = fs.readFileSync(absPath, 'utf-8');
+                      const updated = applySafeSecretExtraction(sourceCode, issue.line, issue.matchText, varName);
+                      fs.writeFileSync(absPath, updated, 'utf-8');
                       console.log(chalk.green(`   ✔ Refactored ${issue.file}`));
 
-                      // 2. Append to .env
-                      const envFilePath = path.join(process.cwd(), '.env');
-                      fs.appendFileSync(envFilePath, `\n${varRes.varName}="${issue.matchText}"\n`, 'utf-8');
-                      console.log(chalk.green(`   ✔ Vaulted ${varRes.varName} into .env`));
+                      // 2. Append to .env with owner-only permissions
+                      const envFilePath = path.join(rootDir, '.env');
+                      fs.appendFileSync(envFilePath, formatDotenvLine(varName, issue.matchText), {
+                        encoding: 'utf-8',
+                        mode: 0o600,
+                      });
+                      fs.chmodSync(envFilePath, 0o600);
+                      console.log(chalk.green(`   ✔ Vaulted ${varName} into .env`));
                     }
                   } catch (err) {
                     console.log(chalk.red(`   ❌ Failed to automatically extract secret from ${issue.file}`));
                   }
+                } else if (varName) {
+                  console.log(chalk.red(`   ❌ Invalid environment variable name "${varName}". Use letters, digits, and underscores only.`));
                 }
               }
             }
@@ -342,7 +350,7 @@ program
 
           console.log(chalk.cyan(`\n⬆️ Pushing local secrets to the Cloud Vault...`));
           try {
-            execSync(`npx runenv push --yes`, { stdio: 'inherit' });
+            runRunenv(['push', '--yes']);
             
             // Backup the .env file to seal the leak
             const envPath = path.join(process.cwd(), '.env');
