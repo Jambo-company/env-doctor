@@ -21,11 +21,14 @@ runs:
       shell: bash
       env:
         CI: true
+        INPUT_DIR: ${{ inputs.dir }}
+        INPUT_NO_ENTROPY: ${{ inputs.no-entropy }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
-        ARGS=""
-        if [ "${{ inputs.no-entropy }}" = "true" ]; then
-          ARGS="--no-entropy"
+        ARGS=()
+        if [ "${INPUT_NO_ENTROPY}" = "true" ]; then
+          ARGS+=("--no-entropy")
         fi
-        
+
         # We execute the bundled application statically from the action path
-        node ${{ github.action_path }}/dist/index.js -d "${{ inputs.dir }}" $ARGS
+        node "${ACTION_PATH}/dist/index.js" -d "${INPUT_DIR}" "${ARGS[@]}"
